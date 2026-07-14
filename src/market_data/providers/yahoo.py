@@ -192,7 +192,7 @@ class YahooFinanceProvider:
 
         try:
             response = self._client.get(
-                request.ticker.symbol",
+                request.ticker.symbol,
                 params=params,
             )
             response.raise_for_status()
