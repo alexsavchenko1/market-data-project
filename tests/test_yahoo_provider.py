@@ -45,7 +45,7 @@ def test_yahoo_provider_returns_price_history() -> None:
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path.endswith("/AAPL")
+        assert request.url.path.endswith("/v8/finance/chart/AAPL")
         assert request.url.params["interval"] == "1d"
 
         return httpx.Response(
