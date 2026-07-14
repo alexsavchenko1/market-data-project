@@ -57,7 +57,7 @@ def test_yahoo_provider_returns_price_history() -> None:
 
     with httpx.Client(
         base_url=(
-            "https://query1.finance.yahoo.com/"
+            "https://query1.finance.yahoo.com/v8/finance/chart/"
             "v8/finance/chart"
         ),
         transport=transport,
@@ -91,7 +91,7 @@ def test_yahoo_provider_handles_http_error() -> None:
 
     with httpx.Client(
         base_url=(
-            "https://query1.finance.yahoo.com/"
+            "https://query1.finance.yahoo.com/v8/finance/chart/"
             "v8/finance/chart"
         ),
         transport=transport,
@@ -129,8 +129,7 @@ def test_yahoo_provider_handles_empty_result() -> None:
 
     with httpx.Client(
         base_url=(
-            "https://query1.finance.yahoo.com/"
-            "v8/finance/chart"
+            "https://query1.finance.yahoo.com/v8/finance/chart/"
         ),
         transport=transport,
     ) as client:
