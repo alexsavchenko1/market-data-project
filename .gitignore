@@ -1,1 +1,30 @@
+# Виртуальное окружение
 .tickerforge/
+
+# Служебные файлы Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Результаты сборки
+build/
+dist/
+
+# Кэши инструментов разработки
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.coverage
+htmlcov/
+
+# Настройки среды разработки и macOS
+.vscode/
+.DS_Store
+
+# Создаваемые приложением данные
+data/prices/*
+data/charts/*
+
+# Оставляем пустые каталоги в репозитории
+!data/prices/.gitkeep
+!data/charts/.gitkeep
