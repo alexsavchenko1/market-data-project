@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Concurrent market data aggregation and analysis service"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "httpx>=0.28,<1.0",
+]
 
 [project.optional-dependencies]
 dev = [
