@@ -12,12 +12,14 @@ YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
 
 def main() -> None:
+    # Берём первый тикер из входного файла.
     ticker_file = Path("config/tickers.csv")
     ticker = next(generate_tickers(ticker_file), None)
 
     if ticker is None:
         raise SystemExit("Файл не содержит тикеров")
 
+    # Пока используем фиксированный период для проверки живого запроса.
     request = PriceHistoryRequest(
         ticker=ticker,
         date_from=date(2025, 1, 1),
