@@ -1,30 +1,26 @@
-from datetime import date
 from pathlib import Path
 
 import httpx
 
 from market_data.exceptions import MarketDataError
-from market_data.models import PriceHistoryRequest
 from market_data.providers.yahoo import YahooFinanceProvider
-from market_data.ticker_reader import generate_tickers
+from market_data.request_reader import (
+    generate_price_history_requests,
+)
 
 YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
 
 def main() -> None:
-    # Берём первый тикер из входного файла.
-    ticker_file = Path("config/tickers.csv")
-    ticker = next(generate_tickers(ticker_file), None)
-
-    if ticker is None:
-        raise SystemExit("Файл не содержит тикеров")
-
-    # Пока используем фиксированный период для проверки живого запроса.
-    request = PriceHistoryRequest(
-        ticker=ticker,
-        date_from=date(2025, 1, 1),
-        date_to=date(2025, 1, 10),
+    # Пока обрабатываем только первый запрос из файла.
+    request_file = Path("config/requests.csv")
+    request = next(
+        generate_price_history_requests(request_file),
+        None,
     )
+
+    if request is None:
+        raise SystemExit("Файл не содержит запросов")
 
     timeout = httpx.Timeout(
         timeout=10.0,
