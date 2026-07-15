@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from concurrent.futures import (
     Future,
     ThreadPoolExecutor,
@@ -19,6 +19,7 @@ def fetch_histories_concurrently(
     requests: Iterable[PriceHistoryRequest],
     provider: MarketDataProvider,
     max_workers: int,
+    on_history_fetched: Callable[[PriceHistory], None] | None = None,
 ) -> BatchFetchResult:
     """Параллельно получает историю цен через пул потоков."""
 
@@ -67,7 +68,12 @@ def fetch_histories_concurrently(
                     )
                 )
                 continue
-
+            
+            if on_history_fetched is not None:
+            # Сразу передаём успешно полученную историю
+            # следующему этапу конвейера.
+                on_history_fetched(history)  
+                  
             indexed_histories.append(
                 (
                     request_index,

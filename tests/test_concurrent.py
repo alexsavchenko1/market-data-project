@@ -85,3 +85,31 @@ def test_concurrent_fetch_rejects_invalid_worker_count() -> None:
             provider=provider,
             max_workers=0,
         )
+        
+def test_concurrent_fetch_passes_successful_histories_to_callback() -> None:
+    provider = StubConcurrentMarketDataProvider()
+    received_histories: list[PriceHistory] = []
+
+    requests = (
+        create_request("AAPL"),
+        create_request("MSFT"),
+        create_request("NVDA"),
+    )
+
+    fetch_histories_concurrently(
+        requests=requests,
+        provider=provider,
+        max_workers=3,
+        on_history_fetched=received_histories.append,
+    )
+
+    received_symbols = sorted(
+        history.ticker.symbol
+        for history in received_histories
+    )
+
+    assert received_symbols == [
+        "AAPL",
+        "NVDA",
+    ]
+# MSFT отсутствует, потому что тестовый поставщик возвращает для него ошибку
