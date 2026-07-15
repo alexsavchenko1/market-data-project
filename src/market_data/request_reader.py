@@ -25,10 +25,7 @@ def _get_required_value(
     value = row.get(column_name)
 
     if value is None or not value.strip():
-        raise ValueError(
-            f"В строке {row_number} не заполнен столбец "
-            f"'{column_name}'"
-        )
+        raise ValueError(f"В строке {row_number} не заполнен столбец '{column_name}'")
 
     return value.strip()
 
@@ -49,10 +46,7 @@ def generate_price_history_requests(
         if missing_columns:
             formatted_columns = ", ".join(sorted(missing_columns))
 
-            raise ValueError(
-                "В файле отсутствуют обязательные столбцы: "
-                f"{formatted_columns}"
-            )
+            raise ValueError(f"В файле отсутствуют обязательные столбцы: {formatted_columns}")
 
         for row_number, row in enumerate(reader, start=2):
             symbol = _get_required_value(
@@ -80,16 +74,13 @@ def generate_price_history_requests(
                 date_from = date.fromisoformat(date_from_raw)
                 date_to = date.fromisoformat(date_to_raw)
             except ValueError as error:
-                raise ValueError(
-                    f"В строке {row_number} указана некорректная дата"
-                ) from error
+                raise ValueError(f"В строке {row_number} указана некорректная дата") from error
 
             try:
                 interval = PriceInterval(interval_raw)
             except ValueError as error:
                 raise ValueError(
-                    f"В строке {row_number} указан "
-                    f"неподдерживаемый интервал '{interval_raw}'"
+                    f"В строке {row_number} указан неподдерживаемый интервал '{interval_raw}'"
                 ) from error
 
             try:
@@ -101,6 +92,5 @@ def generate_price_history_requests(
                 )
             except ValueError as error:
                 raise ValueError(
-                    f"Некорректные параметры в строке "
-                    f"{row_number}: {error}"
+                    f"Некорректные параметры в строке {row_number}: {error}"
                 ) from error

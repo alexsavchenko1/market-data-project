@@ -19,14 +19,10 @@ class BackgroundHistoryWriter:
         max_queue_size: int,
     ) -> None:
         if max_queue_size < 1:
-            raise ValueError(
-                "Размер очереди должен быть больше нуля"
-            )
+            raise ValueError("Размер очереди должен быть больше нуля")
 
         self._repository = repository
-        self._queue: Queue[PriceHistory | None] = Queue(
-            maxsize=max_queue_size
-        )
+        self._queue: Queue[PriceHistory | None] = Queue(maxsize=max_queue_size)
 
         self._thread = Thread(
             target=self._run,
@@ -49,23 +45,17 @@ class BackgroundHistoryWriter:
 
     def start(self) -> None:
         if self._started:
-            raise RuntimeError(
-                "Поток записи уже был запущен"
-            )
+            raise RuntimeError("Поток записи уже был запущен")
 
         self._started = True
         self._thread.start()
 
     def submit(self, history: PriceHistory) -> None:
         if not self._started:
-            raise RuntimeError(
-                "Поток записи ещё не запущен"
-            )
+            raise RuntimeError("Поток записи ещё не запущен")
 
         if self._closed:
-            raise RuntimeError(
-                "Поток записи уже завершён"
-            )
+            raise RuntimeError("Поток записи уже завершён")
 
         # Если очередь заполнена, вызывающий поток ждёт,
         # пока писатель освободит место. Это обратное давление.
@@ -73,9 +63,7 @@ class BackgroundHistoryWriter:
 
     def close(self) -> None:
         if not self._started:
-            raise RuntimeError(
-                "Поток записи ещё не запущен"
-            )
+            raise RuntimeError("Поток записи ещё не запущен")
 
         if self._closed:
             return

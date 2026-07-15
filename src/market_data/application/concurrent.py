@@ -24,9 +24,7 @@ def fetch_histories_concurrently(
     """Параллельно получает историю цен через пул потоков."""
 
     if max_workers < 1:
-        raise ValueError(
-            "Количество рабочих потоков должно быть больше нуля"
-        )
+        raise ValueError("Количество рабочих потоков должно быть больше нуля")
 
     indexed_requests = tuple(enumerate(requests))
 
@@ -68,12 +66,12 @@ def fetch_histories_concurrently(
                     )
                 )
                 continue
-            
+
             if on_history_fetched is not None:
-            # Сразу передаём успешно полученную историю
-            # следующему этапу конвейера.
-                on_history_fetched(history)  
-                  
+                # Сразу передаём успешно полученную историю
+                # следующему этапу конвейера.
+                on_history_fetched(history)
+
             indexed_histories.append(
                 (
                     request_index,
@@ -89,13 +87,7 @@ def fetch_histories_concurrently(
     indexed_failures.sort(key=lambda item: item[0])
 
     return BatchFetchResult(
-        histories=tuple(
-            history
-            for _, history in indexed_histories
-        ),
-        failures=tuple(
-            failure
-            for _, failure in indexed_failures
-        ),
+        histories=tuple(history for _, history in indexed_histories),
+        failures=tuple(failure for _, failure in indexed_failures),
         elapsed_seconds=elapsed_seconds,
     )

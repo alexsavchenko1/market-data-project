@@ -30,9 +30,7 @@ class PriceHistoryRequest:
 
     def __post_init__(self) -> None:
         if self.date_from >= self.date_to:
-            raise ValueError(
-                "Дата начала периода должна быть раньше даты окончания"
-            )
+            raise ValueError("Дата начала периода должна быть раньше даты окончания")
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,9 +40,7 @@ class PricePoint:
 
     def __post_init__(self) -> None:
         if self.adjusted_close <= Decimal("0"):
-            raise ValueError(
-                "Скорректированная цена должна быть больше нуля"
-            )
+            raise ValueError("Скорректированная цена должна быть больше нуля")
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,20 +58,13 @@ class PriceHistory:
         if not self.points:
             raise ValueError("История цен не может быть пустой")
 
-        trading_dates = tuple(
-            point.trading_date
-            for point in self.points
-        )
+        trading_dates = tuple(point.trading_date for point in self.points)
 
         if trading_dates != tuple(sorted(trading_dates)):
-            raise ValueError(
-                "Точки истории должны быть упорядочены по дате"
-            )
+            raise ValueError("Точки истории должны быть упорядочены по дате")
 
         if len(trading_dates) != len(set(trading_dates)):
-            raise ValueError(
-                "История не должна содержать повторяющиеся даты"
-            )
+            raise ValueError("История не должна содержать повторяющиеся даты")
 
         object.__setattr__(
             self,

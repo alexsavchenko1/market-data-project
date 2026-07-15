@@ -20,12 +20,8 @@ class RecordingRepository:
         self.thread_names: list[str] = []
 
     def save(self, history: PriceHistory) -> None:
-        self.saved_tickers.append(
-            history.ticker.symbol
-        )
-        self.thread_names.append(
-            current_thread().name
-        )
+        self.saved_tickers.append(history.ticker.symbol)
+        self.thread_names.append(current_thread().name)
 
 
 class PartiallyFailingRepository:
@@ -36,9 +32,7 @@ class PartiallyFailingRepository:
         if history.ticker == Ticker("MSFT"):
             raise OSError("Тестовая ошибка записи")
 
-        self.saved_tickers.append(
-            history.ticker.symbol
-        )
+        self.saved_tickers.append(history.ticker.symbol)
 
 
 def create_history(symbol: str) -> PriceHistory:

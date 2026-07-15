@@ -56,10 +56,7 @@ def test_yahoo_provider_returns_price_history() -> None:
     transport = httpx.MockTransport(handler)
 
     with httpx.Client(
-        base_url=(
-            "https://query1.finance.yahoo.com/v8/finance/chart/"
-            "v8/finance/chart"
-        ),
+        base_url=("https://query1.finance.yahoo.com/v8/finance/chart/v8/finance/chart"),
         transport=transport,
         timeout=10.0,
     ) as client:
@@ -90,10 +87,7 @@ def test_yahoo_provider_handles_http_error() -> None:
     transport = httpx.MockTransport(handler)
 
     with httpx.Client(
-        base_url=(
-            "https://query1.finance.yahoo.com/v8/finance/chart/"
-            "v8/finance/chart"
-        ),
+        base_url=("https://query1.finance.yahoo.com/v8/finance/chart/v8/finance/chart"),
         transport=transport,
     ) as client:
         provider = YahooFinanceProvider(client)
@@ -128,9 +122,7 @@ def test_yahoo_provider_handles_empty_result() -> None:
     transport = httpx.MockTransport(handler)
 
     with httpx.Client(
-        base_url=(
-            "https://query1.finance.yahoo.com/v8/finance/chart/"
-        ),
+        base_url=("https://query1.finance.yahoo.com/v8/finance/chart/"),
         transport=transport,
     ) as client:
         provider = YahooFinanceProvider(client)

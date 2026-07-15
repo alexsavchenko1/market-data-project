@@ -21,9 +21,7 @@ class StubConcurrentMarketDataProvider:
         request: PriceHistoryRequest,
     ) -> PriceHistory:
         if request.ticker.symbol == "MSFT":
-            raise MarketDataRequestError(
-                "Тестовая ошибка поставщика"
-            )
+            raise MarketDataRequestError("Тестовая ошибка поставщика")
 
         return PriceHistory(
             ticker=request.ticker,
@@ -60,10 +58,7 @@ def test_concurrent_fetch_processes_all_requests() -> None:
         max_workers=3,
     )
 
-    assert [
-        history.ticker.symbol
-        for history in result.histories
-    ] == [
+    assert [history.ticker.symbol for history in result.histories] == [
         "AAPL",
         "NVDA",
     ]
@@ -85,7 +80,8 @@ def test_concurrent_fetch_rejects_invalid_worker_count() -> None:
             provider=provider,
             max_workers=0,
         )
-        
+
+
 def test_concurrent_fetch_passes_successful_histories_to_callback() -> None:
     provider = StubConcurrentMarketDataProvider()
     received_histories: list[PriceHistory] = []
@@ -103,13 +99,12 @@ def test_concurrent_fetch_passes_successful_histories_to_callback() -> None:
         on_history_fetched=received_histories.append,
     )
 
-    received_symbols = sorted(
-        history.ticker.symbol
-        for history in received_histories
-    )
+    received_symbols = sorted(history.ticker.symbol for history in received_histories)
 
     assert received_symbols == [
         "AAPL",
         "NVDA",
     ]
+
+
 # MSFT отсутствует, потому что тестовый поставщик возвращает для него ошибку

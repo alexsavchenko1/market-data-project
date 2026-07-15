@@ -16,10 +16,7 @@ class CsvPriceHistoryRepository:
             exist_ok=True,
         )
 
-        target_path = (
-            self._output_directory
-            / f"{history.ticker.symbol}.csv"
-        )
+        target_path = self._output_directory / f"{history.ticker.symbol}.csv"
         temporary_path = target_path.with_suffix(".csv.tmp")
 
         with temporary_path.open(

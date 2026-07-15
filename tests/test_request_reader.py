@@ -20,9 +20,7 @@ def test_generate_requests_returns_parsed_requests(
         encoding="utf-8",
     )
 
-    requests = list(
-        generate_price_history_requests(request_file)
-    )
+    requests = list(generate_price_history_requests(request_file))
 
     assert len(requests) == 2
     assert requests[0].ticker == Ticker("AAPL")
@@ -37,8 +35,7 @@ def test_generate_requests_rejects_missing_column(
 ) -> None:
     request_file = tmp_path / "requests.csv"
     request_file.write_text(
-        "symbol,date_from,date_to\n"
-        "AAPL,2025-01-01,2025-01-10\n",
+        "symbol,date_from,date_to\nAAPL,2025-01-01,2025-01-10\n",
         encoding="utf-8",
     )
 
@@ -54,8 +51,7 @@ def test_generate_requests_rejects_invalid_date(
 ) -> None:
     request_file = tmp_path / "requests.csv"
     request_file.write_text(
-        "symbol,date_from,date_to,interval\n"
-        "AAPL,не-дата,2025-01-10,1d\n",
+        "symbol,date_from,date_to,interval\nAAPL,не-дата,2025-01-10,1d\n",
         encoding="utf-8",
     )
 
@@ -71,8 +67,7 @@ def test_generate_requests_rejects_unsupported_interval(
 ) -> None:
     request_file = tmp_path / "requests.csv"
     request_file.write_text(
-        "symbol,date_from,date_to,interval\n"
-        "AAPL,2025-01-01,2025-01-10,5m\n",
+        "symbol,date_from,date_to,interval\nAAPL,2025-01-01,2025-01-10,5m\n",
         encoding="utf-8",
     )
 
@@ -88,8 +83,7 @@ def test_generate_requests_rejects_invalid_period(
 ) -> None:
     request_file = tmp_path / "requests.csv"
     request_file.write_text(
-        "symbol,date_from,date_to,interval\n"
-        "AAPL,2025-01-10,2025-01-01,1d\n",
+        "symbol,date_from,date_to,interval\nAAPL,2025-01-10,2025-01-01,1d\n",
         encoding="utf-8",
     )
 

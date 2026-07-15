@@ -24,9 +24,7 @@ class StubMarketDataProvider:
         self.calls.append(request.ticker.symbol)
 
         if request.ticker.symbol == "MSFT":
-            raise MarketDataRequestError(
-                "Тестовая ошибка поставщика"
-            )
+            raise MarketDataRequestError("Тестовая ошибка поставщика")
 
         return PriceHistory(
             ticker=request.ticker,
@@ -72,10 +70,7 @@ def test_sequential_fetch_processes_all_requests() -> None:
         "NVDA",
     ]
 
-    assert [
-        history.ticker.symbol
-        for history in result.histories
-    ] == [
+    assert [history.ticker.symbol for history in result.histories] == [
         "AAPL",
         "NVDA",
     ]
