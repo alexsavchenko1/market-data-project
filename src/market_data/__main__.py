@@ -43,6 +43,12 @@ def main() -> None:
     repository = CsvPriceHistoryRepository(
         output_directory=OUTPUT_DIRECTORY,
     )
+
+    removed_price_files = repository.clear()
+
+    # Старый график не должен оставаться после неуспешного запуска.
+    COMPARISON_CHART.unlink(missing_ok=True)
+
     writer = BackgroundHistoryWriter(
         repository=repository,
         max_queue_size=MAX_QUEUE_SIZE,
@@ -68,23 +74,28 @@ def main() -> None:
                 on_history_fetched=writer.submit,
             )
     finally:
-        # Дожидаемся сохранения всех элементов очереди
-        # даже при неожиданной ошибке загрузки.
+        # Дожидаемся сохранения всех элементов очереди.
         writer.close()
 
-    comparison_builder = PriceComparisonBuilder()
+    chart_created = False
 
-    normalized_series = comparison_builder.load_and_normalize(OUTPUT_DIRECTORY)
+    if writer.saved_count > 0:
+        comparison_builder = PriceComparisonBuilder()
 
-    comparison_builder.save_chart(
-        series=normalized_series,
-        output_path=COMPARISON_CHART,
-    )
+        normalized_series = comparison_builder.load_and_normalize(OUTPUT_DIRECTORY)
+
+        comparison_builder.save_chart(
+            series=normalized_series,
+            output_path=COMPARISON_CHART,
+        )
+
+        chart_created = True
 
     print("Результаты многопоточной загрузки и записи")
     print("=" * 50)
     print(f"Рабочих потоков загрузки: {MAX_WORKERS}")
     print(f"Максимальный размер очереди: {MAX_QUEUE_SIZE}")
+    print(f"Удалено старых файлов: {removed_price_files}")
 
     for history in result.histories:
         print(f"[ЗАГРУЖЕНО] {history.ticker.symbol}: {len(history.points)} точек")
@@ -102,7 +113,11 @@ def main() -> None:
     print(f"Ошибок записи: {len(writer.failures)}")
     print(f"Время загрузки: {result.elapsed_seconds:.3f} секунд")
     print(f"Каталог результатов: {OUTPUT_DIRECTORY}")
-    print(f"Сравнительный график: {COMPARISON_CHART}")
+
+    if chart_created:
+        print(f"Сравнительный график: {COMPARISON_CHART}")
+    else:
+        print("Сравнительный график не построен: нет успешно сохранённых данных")
 
 
 if __name__ == "__main__":

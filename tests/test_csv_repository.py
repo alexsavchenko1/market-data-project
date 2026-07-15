@@ -58,3 +58,50 @@ def test_csv_repository_saves_price_history(
             "currency": "USD",
         },
     ]
+
+
+def test_csv_repository_clears_generated_files(
+    tmp_path: Path,
+) -> None:
+    output_directory = tmp_path / "prices"
+    output_directory.mkdir()
+
+    (output_directory / "AAPL.csv").write_text(
+        "test",
+        encoding="utf-8",
+    )
+    (output_directory / "MSFT.csv.tmp").write_text(
+        "test",
+        encoding="utf-8",
+    )
+    (output_directory / ".gitkeep").write_text(
+        "",
+        encoding="utf-8",
+    )
+    (output_directory / "notes.txt").write_text(
+        "Не удалять",
+        encoding="utf-8",
+    )
+
+    repository = CsvPriceHistoryRepository(output_directory)
+
+    removed_count = repository.clear()
+
+    assert removed_count == 2
+    assert not (output_directory / "AAPL.csv").exists()
+    assert not (output_directory / "MSFT.csv.tmp").exists()
+    assert (output_directory / ".gitkeep").exists()
+    assert (output_directory / "notes.txt").exists()
+
+
+def test_csv_repository_clear_accepts_missing_directory(
+    tmp_path: Path,
+) -> None:
+    output_directory = tmp_path / "missing"
+
+    repository = CsvPriceHistoryRepository(output_directory)
+
+    removed_count = repository.clear()
+
+    assert removed_count == 0
+    assert not output_directory.exists()

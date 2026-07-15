@@ -8,6 +8,24 @@ class CsvPriceHistoryRepository:
     def __init__(self, output_directory: Path) -> None:
         self._output_directory = output_directory
 
+    def clear(self) -> int:
+        """Удаляет ранее созданные CSV и временные файлы."""
+
+        if not self._output_directory.exists():
+            return 0
+
+        generated_files = sorted(
+            [
+                *self._output_directory.glob("*.csv"),
+                *self._output_directory.glob("*.csv.tmp"),
+            ]
+        )
+
+        for generated_file in generated_files:
+            generated_file.unlink()
+
+        return len(generated_files)
+
     def save(self, history: PriceHistory) -> None:
         """Сохраняет историю одного тикера в отдельный CSV-файл."""
 
@@ -43,6 +61,5 @@ class CsvPriceHistoryRepository:
                     )
                 )
 
-        # Сначала полностью создаём временный файл,
-        # затем атомарно заменяем итоговый.
+        # Итоговый файл появляется только после завершения полной записи.
         temporary_path.replace(target_path)
