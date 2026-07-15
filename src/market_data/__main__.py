@@ -2,8 +2,8 @@ from pathlib import Path
 
 import httpx
 
-from market_data.application.sequential import (
-    fetch_histories_sequentially,
+from market_data.application.concurrent import (
+    fetch_histories_concurrently,
 )
 from market_data.providers.yahoo import YahooFinanceProvider
 from market_data.request_reader import (
@@ -11,11 +11,17 @@ from market_data.request_reader import (
 )
 
 YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
+MAX_WORKERS = 5
 
 
 def main() -> None:
     request_file = Path("config/requests.csv")
-    requests = generate_price_history_requests(request_file)
+    requests = tuple(
+        generate_price_history_requests(request_file)
+    )
+
+    if not requests:
+        raise SystemExit("Файл не содержит запросов")
 
     timeout = httpx.Timeout(
         timeout=10.0,
@@ -32,13 +38,15 @@ def main() -> None:
     ) as client:
         provider = YahooFinanceProvider(client)
 
-        result = fetch_histories_sequentially(
+        result = fetch_histories_concurrently(
             requests=requests,
             provider=provider,
+            max_workers=MAX_WORKERS,
         )
 
-    print("Результаты последовательной загрузки")
+    print("Результаты многопоточной загрузки")
     print("=" * 40)
+    print(f"Рабочих потоков: {MAX_WORKERS}")
 
     for history in result.histories:
         print(
