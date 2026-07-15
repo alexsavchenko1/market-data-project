@@ -1,10 +1,14 @@
 class MarketDataError(Exception):
-    """Базовая ошибка получения рыночных данных."""
+    """Базовая ошибка сервиса рыночных данных."""
 
 
 class MarketDataRequestError(MarketDataError):
-    """Ошибка выполнения запроса к внешнему источнику."""
+    """Ошибка выполнения запроса к поставщику данных."""
+
+
+class MarketDataTransientError(MarketDataRequestError):
+    """Временная ошибка, после которой запрос можно повторить."""
 
 
 class MarketDataResponseError(MarketDataError):
-    """Ошибка структуры или содержимого ответа."""
+    """Ошибка структуры или содержимого ответа поставщика."""

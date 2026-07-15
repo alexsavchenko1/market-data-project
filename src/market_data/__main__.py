@@ -11,6 +11,10 @@ from market_data.application.background_writer import (
 from market_data.application.concurrent import (
     fetch_histories_concurrently,
 )
+from market_data.providers.retrying import (
+    RetryingMarketDataProvider,
+    RetryPolicy,
+)
 from market_data.providers.yahoo import YahooFinanceProvider
 from market_data.request_reader import (
     generate_price_history_requests,
@@ -27,6 +31,11 @@ COMPARISON_CHART = Path("data/charts/comparison.png")
 
 MAX_WORKERS = 5
 MAX_QUEUE_SIZE = 2
+
+MAX_ATTEMPTS = 3
+INITIAL_RETRY_DELAY_SECONDS = 0.25
+RETRY_DELAY_MULTIPLIER = 2.0
+MAX_RETRY_DELAY_SECONDS = 2.0
 
 
 def main() -> None:
@@ -54,6 +63,13 @@ def main() -> None:
         max_queue_size=MAX_QUEUE_SIZE,
     )
 
+    retry_policy = RetryPolicy(
+        max_attempts=MAX_ATTEMPTS,
+        initial_delay_seconds=(INITIAL_RETRY_DELAY_SECONDS),
+        multiplier=RETRY_DELAY_MULTIPLIER,
+        max_delay_seconds=MAX_RETRY_DELAY_SECONDS,
+    )
+
     writer.start()
 
     try:
@@ -65,7 +81,12 @@ def main() -> None:
                 "User-Agent": "market-data-project/0.1",
             },
         ) as client:
-            provider = YahooFinanceProvider(client)
+            yahoo_provider = YahooFinanceProvider(client)
+
+            provider = RetryingMarketDataProvider(
+                provider=yahoo_provider,
+                policy=retry_policy,
+            )
 
             result = fetch_histories_concurrently(
                 requests=requests,
@@ -74,7 +95,6 @@ def main() -> None:
                 on_history_fetched=writer.submit,
             )
     finally:
-        # Дожидаемся сохранения всех элементов очереди.
         writer.close()
 
     chart_created = False
@@ -95,6 +115,7 @@ def main() -> None:
     print("=" * 50)
     print(f"Рабочих потоков загрузки: {MAX_WORKERS}")
     print(f"Максимальный размер очереди: {MAX_QUEUE_SIZE}")
+    print(f"Максимальное число попыток: {MAX_ATTEMPTS}")
     print(f"Удалено старых файлов: {removed_price_files}")
 
     for history in result.histories:

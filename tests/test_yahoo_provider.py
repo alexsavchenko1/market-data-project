@@ -1,5 +1,4 @@
-from datetime import date
-from decimal import Decimal
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
@@ -7,6 +6,7 @@ import pytest
 from market_data.exceptions import (
     MarketDataRequestError,
     MarketDataResponseError,
+    MarketDataTransientError,
 )
 from market_data.models import (
     PriceHistoryRequest,
@@ -14,29 +14,55 @@ from market_data.models import (
 )
 from market_data.providers.yahoo import YahooFinanceProvider
 
+BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
-def test_yahoo_provider_returns_price_history() -> None:
-    payload: dict[str, object] = {
+
+def create_request() -> PriceHistoryRequest:
+    return PriceHistoryRequest(
+        ticker=Ticker("AAPL"),
+        date_from=date(2025, 1, 1),
+        date_to=date(2025, 1, 10),
+    )
+
+
+def create_timestamp(
+    year: int,
+    month: int,
+    day: int,
+) -> int:
+    return int(
+        datetime(
+            year,
+            month,
+            day,
+            tzinfo=UTC,
+        ).timestamp()
+    )
+
+
+def create_success_payload() -> dict[str, object]:
+    return {
         "chart": {
             "result": [
                 {
                     "meta": {
                         "currency": "USD",
-                        "symbol": "AAPL",
                     },
                     "timestamp": [
-                        1735689600,
-                        1735776000,
+                        create_timestamp(2025, 1, 2),
+                        create_timestamp(2025, 1, 3),
+                        create_timestamp(2025, 1, 6),
                     ],
                     "indicators": {
                         "adjclose": [
                             {
                                 "adjclose": [
-                                    180.5,
-                                    182.25,
-                                ]
+                                    242.30,
+                                    None,
+                                    243.44,
+                                ],
                             }
-                        ]
+                        ],
                     },
                 }
             ],
@@ -44,85 +70,166 @@ def test_yahoo_provider_returns_price_history() -> None:
         }
     }
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path.endswith("/v8/finance/chart/AAPL")
+
+def test_yahoo_provider_returns_price_history() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        assert request.url.path == ("/v8/finance/chart/AAPL")
         assert request.url.params["interval"] == "1d"
 
         return httpx.Response(
             status_code=200,
-            json=payload,
+            json=create_success_payload(),
+            request=request,
         )
 
     transport = httpx.MockTransport(handler)
 
     with httpx.Client(
-        base_url=("https://query1.finance.yahoo.com/v8/finance/chart/v8/finance/chart"),
+        base_url=BASE_URL,
         transport=transport,
-        timeout=10.0,
     ) as client:
         provider = YahooFinanceProvider(client)
-
-        history = provider.fetch_history(
-            PriceHistoryRequest(
-                ticker=Ticker("AAPL"),
-                date_from=date(2025, 1, 1),
-                date_to=date(2025, 1, 3),
-            )
-        )
+        history = provider.fetch_history(create_request())
 
     assert history.ticker == Ticker("AAPL")
     assert history.currency == "USD"
     assert len(history.points) == 2
-    assert history.points[0].trading_date == date(2025, 1, 1)
-    assert history.points[0].adjusted_close == Decimal("180.5")
+    assert history.points[0].trading_date == date(
+        2025,
+        1,
+        2,
+    )
+    assert history.points[1].trading_date == date(
+        2025,
+        1,
+        6,
+    )
 
 
-def test_yahoo_provider_handles_http_error() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+def test_yahoo_provider_marks_server_error_as_transient() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
         return httpx.Response(
-            status_code=429,
-            text="Too Many Requests",
+            status_code=503,
+            request=request,
         )
 
     transport = httpx.MockTransport(handler)
 
     with httpx.Client(
-        base_url=("https://query1.finance.yahoo.com/v8/finance/chart/v8/finance/chart"),
+        base_url=BASE_URL,
+        transport=transport,
+    ) as client:
+        provider = YahooFinanceProvider(client)
+
+        with pytest.raises(
+            MarketDataTransientError,
+            match="HTTP 503",
+        ):
+            provider.fetch_history(create_request())
+
+
+def test_yahoo_provider_marks_rate_limit_as_transient() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        return httpx.Response(
+            status_code=429,
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    with httpx.Client(
+        base_url=BASE_URL,
+        transport=transport,
+    ) as client:
+        provider = YahooFinanceProvider(client)
+
+        with pytest.raises(
+            MarketDataTransientError,
+            match="HTTP 429",
+        ):
+            provider.fetch_history(create_request())
+
+
+def test_yahoo_provider_marks_not_found_as_permanent() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        return httpx.Response(
+            status_code=404,
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    with httpx.Client(
+        base_url=BASE_URL,
         transport=transport,
     ) as client:
         provider = YahooFinanceProvider(client)
 
         with pytest.raises(
             MarketDataRequestError,
-            match="Не удалось получить данные для AAPL",
-        ):
-            provider.fetch_history(
-                PriceHistoryRequest(
-                    ticker=Ticker("AAPL"),
-                    date_from=date(2025, 1, 1),
-                    date_to=date(2025, 1, 3),
-                )
-            )
+            match="HTTP 404",
+        ) as error_info:
+            provider.fetch_history(create_request())
+
+    assert not isinstance(
+        error_info.value,
+        MarketDataTransientError,
+    )
 
 
-def test_yahoo_provider_handles_empty_result() -> None:
-    payload: dict[str, object] = {
-        "chart": {
-            "result": [],
-            "error": None,
-        }
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            status_code=200,
-            json=payload,
+def test_yahoo_provider_marks_network_error_as_transient() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        raise httpx.ConnectError(
+            "Тестовая ошибка соединения",
+            request=request,
         )
 
     transport = httpx.MockTransport(handler)
 
     with httpx.Client(
-        base_url=("https://query1.finance.yahoo.com/v8/finance/chart/"),
+        base_url=BASE_URL,
+        transport=transport,
+    ) as client:
+        provider = YahooFinanceProvider(client)
+
+        with pytest.raises(
+            MarketDataTransientError,
+            match="Временная сетевая ошибка",
+        ):
+            provider.fetch_history(create_request())
+
+
+def test_yahoo_provider_rejects_malformed_response() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        payload: dict[str, object] = {
+            "chart": {
+                "result": [],
+                "error": None,
+            }
+        }
+
+        return httpx.Response(
+            status_code=200,
+            json=payload,
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    with httpx.Client(
+        base_url=BASE_URL,
         transport=transport,
     ) as client:
         provider = YahooFinanceProvider(client)
@@ -131,10 +238,4 @@ def test_yahoo_provider_handles_empty_result() -> None:
             MarketDataResponseError,
             match="не вернул данные",
         ):
-            provider.fetch_history(
-                PriceHistoryRequest(
-                    ticker=Ticker("UNKNOWN"),
-                    date_from=date(2025, 1, 1),
-                    date_to=date(2025, 1, 3),
-                )
-            )
+            provider.fetch_history(create_request())
