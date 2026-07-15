@@ -2,6 +2,9 @@ from pathlib import Path
 
 import httpx
 
+from market_data.analysis.comparison import (
+    PriceComparisonBuilder,
+)
 from market_data.application.background_writer import (
     BackgroundHistoryWriter,
 )
@@ -20,15 +23,14 @@ YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
 REQUEST_FILE = Path("config/requests.csv")
 OUTPUT_DIRECTORY = Path("data/prices")
+COMPARISON_CHART = Path("data/charts/comparison.png")
 
 MAX_WORKERS = 5
 MAX_QUEUE_SIZE = 2
 
 
 def main() -> None:
-    requests = tuple(
-        generate_price_history_requests(REQUEST_FILE)
-    )
+    requests = tuple(generate_price_history_requests(REQUEST_FILE))
 
     if not requests:
         raise SystemExit("Файл не содержит запросов")
@@ -70,28 +72,28 @@ def main() -> None:
         # даже при неожиданной ошибке загрузки.
         writer.close()
 
+    comparison_builder = PriceComparisonBuilder()
+
+    normalized_series = comparison_builder.load_and_normalize(OUTPUT_DIRECTORY)
+
+    comparison_builder.save_chart(
+        series=normalized_series,
+        output_path=COMPARISON_CHART,
+    )
+
     print("Результаты многопоточной загрузки и записи")
     print("=" * 50)
     print(f"Рабочих потоков загрузки: {MAX_WORKERS}")
     print(f"Максимальный размер очереди: {MAX_QUEUE_SIZE}")
 
     for history in result.histories:
-        print(
-            f"[ЗАГРУЖЕНО] {history.ticker.symbol}: "
-            f"{len(history.points)} точек"
-        )
+        print(f"[ЗАГРУЖЕНО] {history.ticker.symbol}: {len(history.points)} точек")
 
     for failure in result.failures:
-        print(
-            f"[ОШИБКА ЗАГРУЗКИ] {failure.ticker.symbol}: "
-            f"{failure.message}"
-        )
+        print(f"[ОШИБКА ЗАГРУЗКИ] {failure.ticker.symbol}: {failure.message}")
 
     for failure in writer.failures:
-        print(
-            f"[ОШИБКА ЗАПИСИ] {failure.ticker.symbol}: "
-            f"{failure.message}"
-        )
+        print(f"[ОШИБКА ЗАПИСИ] {failure.ticker.symbol}: {failure.message}")
 
     print("=" * 50)
     print(f"Загружено историй: {len(result.histories)}")
@@ -100,6 +102,7 @@ def main() -> None:
     print(f"Ошибок записи: {len(writer.failures)}")
     print(f"Время загрузки: {result.elapsed_seconds:.3f} секунд")
     print(f"Каталог результатов: {OUTPUT_DIRECTORY}")
+    print(f"Сравнительный график: {COMPARISON_CHART}")
 
 
 if __name__ == "__main__":
