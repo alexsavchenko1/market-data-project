@@ -1,4 +1,6 @@
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 
@@ -10,6 +12,11 @@ from market_data.application.background_writer import (
 )
 from market_data.application.concurrent import (
     fetch_histories_concurrently,
+)
+from market_data.observability.run_report import (
+    FailureRecord,
+    JsonRunReportRepository,
+    RunReport,
 )
 from market_data.providers.retrying import (
     RetryingMarketDataProvider,
@@ -28,6 +35,7 @@ YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 REQUEST_FILE = Path("config/requests.csv")
 OUTPUT_DIRECTORY = Path("data/prices")
 COMPARISON_CHART = Path("data/charts/comparison.png")
+RUN_REPORT_PATH = Path("data/reports/latest.json")
 
 MAX_WORKERS = 5
 MAX_QUEUE_SIZE = 2
@@ -39,6 +47,9 @@ MAX_RETRY_DELAY_SECONDS = 2.0
 
 
 def main() -> None:
+    run_id = str(uuid4())
+    started_at = datetime.now(UTC)
+
     requests = tuple(generate_price_history_requests(REQUEST_FILE))
 
     if not requests:
@@ -111,8 +122,47 @@ def main() -> None:
 
         chart_created = True
 
+    finished_at = datetime.now(UTC)
+
+    run_report = RunReport(
+        run_id=run_id,
+        started_at=started_at.isoformat(),
+        finished_at=finished_at.isoformat(),
+        requested_count=len(requests),
+        fetched_count=len(result.histories),
+        saved_count=writer.saved_count,
+        fetch_failure_count=len(result.failures),
+        write_failure_count=len(writer.failures),
+        removed_old_file_count=removed_price_files,
+        fetch_elapsed_seconds=result.elapsed_seconds,
+        max_workers=MAX_WORKERS,
+        max_queue_size=MAX_QUEUE_SIZE,
+        max_attempts=MAX_ATTEMPTS,
+        chart_created=chart_created,
+        price_directory=str(OUTPUT_DIRECTORY),
+        chart_path=str(COMPARISON_CHART),
+        fetch_failures=tuple(
+            FailureRecord(
+                ticker=failure.ticker.symbol,
+                message=failure.message,
+            )
+            for failure in result.failures
+        ),
+        write_failures=tuple(
+            FailureRecord(
+                ticker=failure.ticker.symbol,
+                message=failure.message,
+            )
+            for failure in writer.failures
+        ),
+    )
+
+    report_repository = JsonRunReportRepository(output_path=RUN_REPORT_PATH)
+    report_repository.save(run_report)
+
     print("Результаты многопоточной загрузки и записи")
     print("=" * 50)
+    print(f"Идентификатор запуска: {run_id}")
     print(f"Рабочих потоков загрузки: {MAX_WORKERS}")
     print(f"Максимальный размер очереди: {MAX_QUEUE_SIZE}")
     print(f"Максимальное число попыток: {MAX_ATTEMPTS}")
@@ -128,12 +178,14 @@ def main() -> None:
         print(f"[ОШИБКА ЗАПИСИ] {failure.ticker.symbol}: {failure.message}")
 
     print("=" * 50)
+    print(f"Запрошено историй: {len(requests)}")
     print(f"Загружено историй: {len(result.histories)}")
     print(f"Сохранено файлов: {writer.saved_count}")
     print(f"Ошибок загрузки: {len(result.failures)}")
     print(f"Ошибок записи: {len(writer.failures)}")
     print(f"Время загрузки: {result.elapsed_seconds:.3f} секунд")
     print(f"Каталог результатов: {OUTPUT_DIRECTORY}")
+    print(f"Отчёт о запуске: {RUN_REPORT_PATH}")
 
     if chart_created:
         print(f"Сравнительный график: {COMPARISON_CHART}")

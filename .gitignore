@@ -28,3 +28,4 @@ data/charts/*
 # Оставляем пустые каталоги в репозитории
 !data/prices/.gitkeep
 !data/charts/.gitkeep
+data/reports/*
