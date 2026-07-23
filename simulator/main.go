@@ -54,10 +54,11 @@ func handleChart(
 		attempt,
 	)
 
-	switch ticker {
-	case "SLOW":
+	if strings.HasPrefix(ticker, "SLOW") {
 		time.Sleep(time.Second)
+	}
 
+	switch ticker {
 	case "FLAKY":
 		if attempt <= 2 {
 			http.Error(
