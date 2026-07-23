@@ -21,6 +21,7 @@ class RunReport:
 
     fetch_failure_count: int
     write_failure_count: int
+    retry_count: int
     removed_old_file_count: int
 
     fetch_elapsed_seconds: float
@@ -32,6 +33,7 @@ class RunReport:
     chart_created: bool
     price_directory: str
     chart_path: str
+    event_log_path: str
 
     fetch_failures: tuple[FailureRecord, ...]
     write_failures: tuple[FailureRecord, ...]
@@ -48,6 +50,7 @@ class RunReport:
             "saved_count": self.saved_count,
             "fetch_failure_count": self.fetch_failure_count,
             "write_failure_count": self.write_failure_count,
+            "retry_count": self.retry_count,
             "removed_old_file_count": self.removed_old_file_count,
             "fetch_elapsed_seconds": self.fetch_elapsed_seconds,
             "max_workers": self.max_workers,
@@ -56,6 +59,7 @@ class RunReport:
             "chart_created": self.chart_created,
             "price_directory": self.price_directory,
             "chart_path": self.chart_path,
+            "event_log_path": self.event_log_path,
             "fetch_failures": [
                 {
                     "ticker": failure.ticker,

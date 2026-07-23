@@ -12,13 +12,14 @@ from market_data.observability.run_report import (
 def create_report() -> RunReport:
     return RunReport(
         run_id="test-run-id",
-        started_at="2026-07-15T19:00:00+00:00",
-        finished_at="2026-07-15T19:00:01+00:00",
+        started_at="2026-07-23T19:00:00+00:00",
+        finished_at="2026-07-23T19:00:01+00:00",
         requested_count=3,
         fetched_count=2,
         saved_count=1,
         fetch_failure_count=1,
         write_failure_count=1,
+        retry_count=2,
         removed_old_file_count=4,
         fetch_elapsed_seconds=0.75,
         max_workers=5,
@@ -27,6 +28,7 @@ def create_report() -> RunReport:
         chart_created=True,
         price_directory="data/prices",
         chart_path="data/charts/comparison.png",
+        event_log_path="data/logs/latest.jsonl",
         fetch_failures=(
             FailureRecord(
                 ticker="MSFT",
@@ -51,7 +53,9 @@ def test_run_report_converts_to_dictionary() -> None:
     assert payload["requested_count"] == 3
     assert payload["fetched_count"] == 2
     assert payload["saved_count"] == 1
+    assert payload["retry_count"] == 2
     assert payload["chart_created"] is True
+    assert payload["event_log_path"] == ("data/logs/latest.jsonl")
 
     fetch_failures = cast(
         list[dict[str, object]],
@@ -85,7 +89,9 @@ def test_json_repository_saves_run_report(
 
     assert payload["run_id"] == "test-run-id"
     assert payload["fetch_elapsed_seconds"] == 0.75
+    assert payload["retry_count"] == 2
     assert payload["price_directory"] == "data/prices"
+    assert payload["event_log_path"] == ("data/logs/latest.jsonl")
 
     write_failures = cast(
         list[dict[str, object]],

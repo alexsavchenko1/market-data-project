@@ -17,6 +17,12 @@ from market_data.models import (
     PricePoint,
     Ticker,
 )
+from market_data.observability.event_log import (
+    JsonLineEventLogger,
+)
+from market_data.observability.retry_metrics import (
+    RetryMetrics,
+)
 from market_data.observability.run_report import (
     JsonRunReportRepository,
 )
@@ -56,12 +62,13 @@ def create_request(
     )
 
 
-def test_pipeline_creates_files_chart_and_report(
+def test_pipeline_creates_files_chart_report_and_log(
     tmp_path: Path,
 ) -> None:
     output_directory = tmp_path / "prices"
     chart_path = tmp_path / "charts" / "comparison.png"
     report_path = tmp_path / "reports" / "latest.json"
+    event_log_path = tmp_path / "logs" / "latest.jsonl"
 
     moments = iter(
         (
@@ -89,12 +96,15 @@ def test_pipeline_creates_files_chart_and_report(
 
     pipeline = MarketDataPipeline(
         provider=StubMarketDataProvider(),
-        price_repository=(CsvPriceHistoryRepository(output_directory)),
-        comparison_builder=(PriceComparisonBuilder()),
-        report_repository=(JsonRunReportRepository(report_path)),
+        price_repository=CsvPriceHistoryRepository(output_directory),
+        comparison_builder=PriceComparisonBuilder(),
+        report_repository=JsonRunReportRepository(report_path),
+        event_logger=JsonLineEventLogger(output_path=event_log_path),
+        retry_metrics=RetryMetrics(),
         config=PipelineConfig(
             output_directory=output_directory,
             comparison_chart_path=chart_path,
+            event_log_path=event_log_path,
             max_workers=2,
             max_queue_size=1,
             max_attempts=3,
@@ -111,6 +121,7 @@ def test_pipeline_creates_files_chart_and_report(
     )
 
     assert result.saved_count == 2
+    assert result.retry_count == 0
     assert result.chart_created is True
     assert result.write_failures == ()
 
@@ -118,6 +129,7 @@ def test_pipeline_creates_files_chart_and_report(
     assert (output_directory / "MSFT.csv").exists()
     assert chart_path.exists()
     assert report_path.exists()
+    assert event_log_path.exists()
 
     payload = cast(
         dict[str, object],
@@ -128,8 +140,28 @@ def test_pipeline_creates_files_chart_and_report(
     assert payload["requested_count"] == 2
     assert payload["fetched_count"] == 2
     assert payload["saved_count"] == 2
+    assert payload["retry_count"] == 0
     assert payload["chart_created"] is True
     assert payload["max_workers"] == 2
+    assert payload["event_log_path"] == str(event_log_path)
+
+    events = [
+        cast(
+            dict[str, object],
+            json.loads(line),
+        )
+        for line in event_log_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    event_names = [cast(str, event["event"]) for event in events]
+
+    assert event_names == [
+        "run_started",
+        "history_fetched",
+        "history_fetched",
+        "chart_created",
+        "run_finished",
+    ]
 
 
 def test_pipeline_removes_stale_price_files(
@@ -144,14 +176,19 @@ def test_pipeline_removes_stale_price_files(
         encoding="utf-8",
     )
 
+    event_log_path = tmp_path / "latest.jsonl"
+
     pipeline = MarketDataPipeline(
         provider=StubMarketDataProvider(),
-        price_repository=(CsvPriceHistoryRepository(output_directory)),
-        comparison_builder=(PriceComparisonBuilder()),
-        report_repository=(JsonRunReportRepository(tmp_path / "latest.json")),
+        price_repository=CsvPriceHistoryRepository(output_directory),
+        comparison_builder=PriceComparisonBuilder(),
+        report_repository=JsonRunReportRepository(tmp_path / "latest.json"),
+        event_logger=JsonLineEventLogger(output_path=event_log_path),
+        retry_metrics=RetryMetrics(),
         config=PipelineConfig(
             output_directory=output_directory,
             comparison_chart_path=(tmp_path / "comparison.png"),
+            event_log_path=event_log_path,
             max_workers=1,
             max_queue_size=1,
             max_attempts=3,

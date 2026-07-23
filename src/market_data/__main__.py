@@ -10,6 +10,13 @@ from market_data.application.pipeline import (
     PipelineConfig,
     PipelineRunResult,
 )
+from market_data.observability.event_log import (
+    JsonLineEventLogger,
+)
+from market_data.observability.retry_metrics import (
+    RetryEventObserver,
+    RetryMetrics,
+)
 from market_data.observability.run_report import (
     JsonRunReportRepository,
 )
@@ -31,6 +38,7 @@ REQUEST_FILE = Path("config/requests.csv")
 OUTPUT_DIRECTORY = Path("data/prices")
 COMPARISON_CHART = Path("data/charts/comparison.png")
 RUN_REPORT_PATH = Path("data/reports/latest.json")
+EVENT_LOG_PATH = Path("data/logs/latest.jsonl")
 
 MAX_WORKERS = 5
 MAX_QUEUE_SIZE = 2
@@ -67,11 +75,13 @@ def print_result(
     print(f"Запрошено историй: {result.report.requested_count}")
     print(f"Загружено историй: {result.report.fetched_count}")
     print(f"Сохранено файлов: {result.saved_count}")
+    print(f"Повторных попыток: {result.retry_count}")
     print(f"Ошибок загрузки: {result.report.fetch_failure_count}")
     print(f"Ошибок записи: {result.report.write_failure_count}")
     print(f"Время загрузки: {result.report.fetch_elapsed_seconds:.3f} секунд")
     print(f"Каталог результатов: {result.report.price_directory}")
     print(f"Отчёт о запуске: {RUN_REPORT_PATH}")
+    print(f"Журнал событий: {result.report.event_log_path}")
 
     if result.chart_created:
         print(f"Сравнительный график: {result.report.chart_path}")
@@ -93,16 +103,22 @@ def main() -> None:
     config = PipelineConfig(
         output_directory=OUTPUT_DIRECTORY,
         comparison_chart_path=COMPARISON_CHART,
+        event_log_path=EVENT_LOG_PATH,
         max_workers=MAX_WORKERS,
         max_queue_size=MAX_QUEUE_SIZE,
         max_attempts=MAX_ATTEMPTS,
     )
 
     price_repository = CsvPriceHistoryRepository(output_directory=OUTPUT_DIRECTORY)
-
     comparison_builder = PriceComparisonBuilder()
-
     report_repository = JsonRunReportRepository(output_path=RUN_REPORT_PATH)
+
+    event_logger = JsonLineEventLogger(output_path=EVENT_LOG_PATH)
+    retry_metrics = RetryMetrics()
+    retry_observer = RetryEventObserver(
+        metrics=retry_metrics,
+        event_logger=event_logger,
+    )
 
     retry_policy = RetryPolicy(
         max_attempts=MAX_ATTEMPTS,
@@ -124,13 +140,16 @@ def main() -> None:
         provider = RetryingMarketDataProvider(
             provider=yahoo_provider,
             policy=retry_policy,
+            on_retry=retry_observer,
         )
 
         pipeline = MarketDataPipeline(
             provider=provider,
             price_repository=price_repository,
-            comparison_builder=(comparison_builder),
-            report_repository=(report_repository),
+            comparison_builder=comparison_builder,
+            report_repository=report_repository,
+            event_logger=event_logger,
+            retry_metrics=retry_metrics,
             config=config,
         )
 

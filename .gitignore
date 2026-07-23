@@ -29,3 +29,5 @@ data/charts/*
 !data/prices/.gitkeep
 !data/charts/.gitkeep
 data/reports/*
+
+data/logs/*
