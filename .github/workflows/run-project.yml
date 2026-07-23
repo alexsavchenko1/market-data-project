@@ -1,0 +1,66 @@
+name: Check and run project
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+jobs:
+  run-project:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v6
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: simulator/go.mod
+
+      - name: Install project
+        run: |
+          python -m venv .tickerforge
+          .tickerforge/bin/python -m pip install --upgrade pip
+          .tickerforge/bin/python -m pip install -e ".[dev]"
+
+      - name: Check Python
+        run: |
+          .tickerforge/bin/pytest
+          .tickerforge/bin/ruff check .
+          .tickerforge/bin/pyright
+
+      - name: Check Go
+        run: |
+          cd simulator
+          go test ./...
+          go vet ./...
+
+      - name: Run project
+        run: |
+          cd simulator
+          go run . > /tmp/simulator.log 2>&1 &
+          cd ..
+
+          sleep 2
+
+          MARKET_DATA_PROVIDER_URL=http://localhost:8080/v8/finance/chart/ \
+          MARKET_DATA_REQUEST_FILE=config/simulator-requests.csv \
+          .tickerforge/bin/python -m market_data
+
+      - name: Save results
+        uses: actions/upload-artifact@v7
+        with:
+          name: market-data-results
+          path: |
+            data/prices
+            data/charts
+            data/reports
+            data/logs
