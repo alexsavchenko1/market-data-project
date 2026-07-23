@@ -1,22 +1,17 @@
-from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
 
 import httpx
 
 from market_data.analysis.comparison import (
     PriceComparisonBuilder,
 )
-from market_data.application.background_writer import (
-    BackgroundHistoryWriter,
-)
-from market_data.application.concurrent import (
-    fetch_histories_concurrently,
+from market_data.application.pipeline import (
+    MarketDataPipeline,
+    PipelineConfig,
+    PipelineRunResult,
 )
 from market_data.observability.run_report import (
-    FailureRecord,
     JsonRunReportRepository,
-    RunReport,
 )
 from market_data.providers.retrying import (
     RetryingMarketDataProvider,
@@ -46,10 +41,45 @@ RETRY_DELAY_MULTIPLIER = 2.0
 MAX_RETRY_DELAY_SECONDS = 2.0
 
 
-def main() -> None:
-    run_id = str(uuid4())
-    started_at = datetime.now(UTC)
+def print_result(
+    result: PipelineRunResult,
+) -> None:
+    """Выводит итог выполнения конвейера в терминал."""
 
+    print("Результаты многопоточной загрузки и записи")
+    print("=" * 50)
+    print(f"Идентификатор запуска: {result.report.run_id}")
+    print(f"Рабочих потоков загрузки: {result.report.max_workers}")
+    print(f"Максимальный размер очереди: {result.report.max_queue_size}")
+    print(f"Максимальное число попыток: {result.report.max_attempts}")
+    print(f"Удалено старых файлов: {result.removed_old_file_count}")
+
+    for history in result.batch_result.histories:
+        print(f"[ЗАГРУЖЕНО] {history.ticker.symbol}: {len(history.points)} точек")
+
+    for failure in result.batch_result.failures:
+        print(f"[ОШИБКА ЗАГРУЗКИ] {failure.ticker.symbol}: {failure.message}")
+
+    for failure in result.write_failures:
+        print(f"[ОШИБКА ЗАПИСИ] {failure.ticker.symbol}: {failure.message}")
+
+    print("=" * 50)
+    print(f"Запрошено историй: {result.report.requested_count}")
+    print(f"Загружено историй: {result.report.fetched_count}")
+    print(f"Сохранено файлов: {result.saved_count}")
+    print(f"Ошибок загрузки: {result.report.fetch_failure_count}")
+    print(f"Ошибок записи: {result.report.write_failure_count}")
+    print(f"Время загрузки: {result.report.fetch_elapsed_seconds:.3f} секунд")
+    print(f"Каталог результатов: {result.report.price_directory}")
+    print(f"Отчёт о запуске: {RUN_REPORT_PATH}")
+
+    if result.chart_created:
+        print(f"Сравнительный график: {result.report.chart_path}")
+    else:
+        print("Сравнительный график не построен: нет успешно сохранённых данных")
+
+
+def main() -> None:
     requests = tuple(generate_price_history_requests(REQUEST_FILE))
 
     if not requests:
@@ -60,137 +90,53 @@ def main() -> None:
         connect=5.0,
     )
 
-    repository = CsvPriceHistoryRepository(
+    config = PipelineConfig(
         output_directory=OUTPUT_DIRECTORY,
-    )
-
-    removed_price_files = repository.clear()
-
-    # Старый график не должен оставаться после неуспешного запуска.
-    COMPARISON_CHART.unlink(missing_ok=True)
-
-    writer = BackgroundHistoryWriter(
-        repository=repository,
+        comparison_chart_path=COMPARISON_CHART,
+        max_workers=MAX_WORKERS,
         max_queue_size=MAX_QUEUE_SIZE,
+        max_attempts=MAX_ATTEMPTS,
     )
+
+    price_repository = CsvPriceHistoryRepository(output_directory=OUTPUT_DIRECTORY)
+
+    comparison_builder = PriceComparisonBuilder()
+
+    report_repository = JsonRunReportRepository(output_path=RUN_REPORT_PATH)
 
     retry_policy = RetryPolicy(
         max_attempts=MAX_ATTEMPTS,
         initial_delay_seconds=(INITIAL_RETRY_DELAY_SECONDS),
         multiplier=RETRY_DELAY_MULTIPLIER,
-        max_delay_seconds=MAX_RETRY_DELAY_SECONDS,
+        max_delay_seconds=(MAX_RETRY_DELAY_SECONDS),
     )
 
-    writer.start()
+    with httpx.Client(
+        base_url=YAHOO_BASE_URL,
+        timeout=timeout,
+        follow_redirects=True,
+        headers={
+            "User-Agent": "market-data-project/0.1",
+        },
+    ) as client:
+        yahoo_provider = YahooFinanceProvider(client)
 
-    try:
-        with httpx.Client(
-            base_url=YAHOO_BASE_URL,
-            timeout=timeout,
-            follow_redirects=True,
-            headers={
-                "User-Agent": "market-data-project/0.1",
-            },
-        ) as client:
-            yahoo_provider = YahooFinanceProvider(client)
-
-            provider = RetryingMarketDataProvider(
-                provider=yahoo_provider,
-                policy=retry_policy,
-            )
-
-            result = fetch_histories_concurrently(
-                requests=requests,
-                provider=provider,
-                max_workers=MAX_WORKERS,
-                on_history_fetched=writer.submit,
-            )
-    finally:
-        writer.close()
-
-    chart_created = False
-
-    if writer.saved_count > 0:
-        comparison_builder = PriceComparisonBuilder()
-
-        normalized_series = comparison_builder.load_and_normalize(OUTPUT_DIRECTORY)
-
-        comparison_builder.save_chart(
-            series=normalized_series,
-            output_path=COMPARISON_CHART,
+        provider = RetryingMarketDataProvider(
+            provider=yahoo_provider,
+            policy=retry_policy,
         )
 
-        chart_created = True
+        pipeline = MarketDataPipeline(
+            provider=provider,
+            price_repository=price_repository,
+            comparison_builder=(comparison_builder),
+            report_repository=(report_repository),
+            config=config,
+        )
 
-    finished_at = datetime.now(UTC)
+        result = pipeline.run(requests)
 
-    run_report = RunReport(
-        run_id=run_id,
-        started_at=started_at.isoformat(),
-        finished_at=finished_at.isoformat(),
-        requested_count=len(requests),
-        fetched_count=len(result.histories),
-        saved_count=writer.saved_count,
-        fetch_failure_count=len(result.failures),
-        write_failure_count=len(writer.failures),
-        removed_old_file_count=removed_price_files,
-        fetch_elapsed_seconds=result.elapsed_seconds,
-        max_workers=MAX_WORKERS,
-        max_queue_size=MAX_QUEUE_SIZE,
-        max_attempts=MAX_ATTEMPTS,
-        chart_created=chart_created,
-        price_directory=str(OUTPUT_DIRECTORY),
-        chart_path=str(COMPARISON_CHART),
-        fetch_failures=tuple(
-            FailureRecord(
-                ticker=failure.ticker.symbol,
-                message=failure.message,
-            )
-            for failure in result.failures
-        ),
-        write_failures=tuple(
-            FailureRecord(
-                ticker=failure.ticker.symbol,
-                message=failure.message,
-            )
-            for failure in writer.failures
-        ),
-    )
-
-    report_repository = JsonRunReportRepository(output_path=RUN_REPORT_PATH)
-    report_repository.save(run_report)
-
-    print("Результаты многопоточной загрузки и записи")
-    print("=" * 50)
-    print(f"Идентификатор запуска: {run_id}")
-    print(f"Рабочих потоков загрузки: {MAX_WORKERS}")
-    print(f"Максимальный размер очереди: {MAX_QUEUE_SIZE}")
-    print(f"Максимальное число попыток: {MAX_ATTEMPTS}")
-    print(f"Удалено старых файлов: {removed_price_files}")
-
-    for history in result.histories:
-        print(f"[ЗАГРУЖЕНО] {history.ticker.symbol}: {len(history.points)} точек")
-
-    for failure in result.failures:
-        print(f"[ОШИБКА ЗАГРУЗКИ] {failure.ticker.symbol}: {failure.message}")
-
-    for failure in writer.failures:
-        print(f"[ОШИБКА ЗАПИСИ] {failure.ticker.symbol}: {failure.message}")
-
-    print("=" * 50)
-    print(f"Запрошено историй: {len(requests)}")
-    print(f"Загружено историй: {len(result.histories)}")
-    print(f"Сохранено файлов: {writer.saved_count}")
-    print(f"Ошибок загрузки: {len(result.failures)}")
-    print(f"Ошибок записи: {len(writer.failures)}")
-    print(f"Время загрузки: {result.elapsed_seconds:.3f} секунд")
-    print(f"Каталог результатов: {OUTPUT_DIRECTORY}")
-    print(f"Отчёт о запуске: {RUN_REPORT_PATH}")
-
-    if chart_created:
-        print(f"Сравнительный график: {COMPARISON_CHART}")
-    else:
-        print("Сравнительный график не построен: нет успешно сохранённых данных")
+    print_result(result)
 
 
 if __name__ == "__main__":
