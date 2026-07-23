@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import httpx
 
 from market_data.analysis.comparison import (
@@ -9,6 +7,10 @@ from market_data.application.pipeline import (
     MarketDataPipeline,
     PipelineConfig,
     PipelineRunResult,
+)
+from market_data.configuration import (
+    ApplicationSettings,
+    load_settings,
 )
 from market_data.observability.event_log import (
     JsonLineEventLogger,
@@ -32,25 +34,10 @@ from market_data.storage.csv_repository import (
     CsvPriceHistoryRepository,
 )
 
-YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
-
-REQUEST_FILE = Path("config/requests.csv")
-OUTPUT_DIRECTORY = Path("data/prices")
-COMPARISON_CHART = Path("data/charts/comparison.png")
-RUN_REPORT_PATH = Path("data/reports/latest.json")
-EVENT_LOG_PATH = Path("data/logs/latest.jsonl")
-
-MAX_WORKERS = 5
-MAX_QUEUE_SIZE = 2
-
-MAX_ATTEMPTS = 3
-INITIAL_RETRY_DELAY_SECONDS = 0.25
-RETRY_DELAY_MULTIPLIER = 2.0
-MAX_RETRY_DELAY_SECONDS = 2.0
-
 
 def print_result(
     result: PipelineRunResult,
+    settings: ApplicationSettings,
 ) -> None:
     """Выводит итог выполнения конвейера в терминал."""
 
@@ -80,7 +67,7 @@ def print_result(
     print(f"Ошибок записи: {result.report.write_failure_count}")
     print(f"Время загрузки: {result.report.fetch_elapsed_seconds:.3f} секунд")
     print(f"Каталог результатов: {result.report.price_directory}")
-    print(f"Отчёт о запуске: {RUN_REPORT_PATH}")
+    print(f"Отчёт о запуске: {settings.run_report_path}")
     print(f"Журнал событий: {result.report.event_log_path}")
 
     if result.chart_created:
@@ -90,45 +77,51 @@ def print_result(
 
 
 def main() -> None:
-    requests = tuple(generate_price_history_requests(REQUEST_FILE))
+    settings = load_settings()
+
+    requests = tuple(generate_price_history_requests(settings.request_file))
 
     if not requests:
         raise SystemExit("Файл не содержит запросов")
 
     timeout = httpx.Timeout(
-        timeout=10.0,
-        connect=5.0,
+        timeout=settings.request_timeout_seconds,
+        connect=settings.connect_timeout_seconds,
     )
 
     config = PipelineConfig(
-        output_directory=OUTPUT_DIRECTORY,
-        comparison_chart_path=COMPARISON_CHART,
-        event_log_path=EVENT_LOG_PATH,
-        max_workers=MAX_WORKERS,
-        max_queue_size=MAX_QUEUE_SIZE,
-        max_attempts=MAX_ATTEMPTS,
+        output_directory=settings.output_directory,
+        comparison_chart_path=(settings.comparison_chart_path),
+        event_log_path=settings.event_log_path,
+        max_workers=settings.max_workers,
+        max_queue_size=settings.max_queue_size,
+        max_attempts=settings.max_attempts,
     )
 
-    price_repository = CsvPriceHistoryRepository(output_directory=OUTPUT_DIRECTORY)
-    comparison_builder = PriceComparisonBuilder()
-    report_repository = JsonRunReportRepository(output_path=RUN_REPORT_PATH)
+    price_repository = CsvPriceHistoryRepository(output_directory=settings.output_directory)
 
-    event_logger = JsonLineEventLogger(output_path=EVENT_LOG_PATH)
+    comparison_builder = PriceComparisonBuilder()
+
+    report_repository = JsonRunReportRepository(output_path=settings.run_report_path)
+
+    event_logger = JsonLineEventLogger(output_path=settings.event_log_path)
+
     retry_metrics = RetryMetrics()
+
     retry_observer = RetryEventObserver(
         metrics=retry_metrics,
         event_logger=event_logger,
     )
 
     retry_policy = RetryPolicy(
-        max_attempts=MAX_ATTEMPTS,
-        initial_delay_seconds=(INITIAL_RETRY_DELAY_SECONDS),
-        multiplier=RETRY_DELAY_MULTIPLIER,
-        max_delay_seconds=(MAX_RETRY_DELAY_SECONDS),
+        max_attempts=settings.max_attempts,
+        initial_delay_seconds=(settings.initial_retry_delay_seconds),
+        multiplier=(settings.retry_delay_multiplier),
+        max_delay_seconds=(settings.max_retry_delay_seconds),
     )
 
     with httpx.Client(
-        base_url=YAHOO_BASE_URL,
+        base_url=settings.provider_base_url,
         timeout=timeout,
         follow_redirects=True,
         headers={
@@ -155,7 +148,10 @@ def main() -> None:
 
         result = pipeline.run(requests)
 
-    print_result(result)
+    print_result(
+        result=result,
+        settings=settings,
+    )
 
 
 if __name__ == "__main__":
