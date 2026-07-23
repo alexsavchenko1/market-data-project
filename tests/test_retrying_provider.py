@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -14,6 +14,7 @@ from market_data.models import (
     Ticker,
 )
 from market_data.providers.retrying import (
+    RetryEvent,
     RetryingMarketDataProvider,
     RetryPolicy,
 )
@@ -82,9 +83,21 @@ class PermanentlyFailingProvider:
         raise MarketDataResponseError("Некорректный ответ поставщика")
 
 
+def fixed_now() -> datetime:
+    return datetime(
+        2026,
+        7,
+        23,
+        12,
+        0,
+        tzinfo=UTC,
+    )
+
+
 def test_retrying_provider_succeeds_after_transient_failures() -> None:
     source_provider = FlakyProvider()
     delays: list[float] = []
+    retry_events: list[RetryEvent] = []
 
     provider = RetryingMarketDataProvider(
         provider=source_provider,
@@ -95,6 +108,8 @@ def test_retrying_provider_succeeds_after_transient_failures() -> None:
             max_delay_seconds=1,
         ),
         sleep_function=delays.append,
+        on_retry=retry_events.append,
+        now_function=fixed_now,
     )
 
     history = provider.fetch_history(create_request())
@@ -102,11 +117,31 @@ def test_retrying_provider_succeeds_after_transient_failures() -> None:
     assert history.ticker == Ticker("AAPL")
     assert source_provider.attempts == 3
     assert delays == pytest.approx([0.1, 0.2])
+    assert len(retry_events) == 2
+
+    assert retry_events[0] == RetryEvent(
+        ticker=Ticker("AAPL"),
+        failed_attempt_number=1,
+        next_attempt_number=2,
+        delay_seconds=0.1,
+        message="Временная тестовая ошибка",
+        occurred_at=("2026-07-23T12:00:00+00:00"),
+    )
+
+    assert retry_events[1] == RetryEvent(
+        ticker=Ticker("AAPL"),
+        failed_attempt_number=2,
+        next_attempt_number=3,
+        delay_seconds=0.2,
+        message="Временная тестовая ошибка",
+        occurred_at=("2026-07-23T12:00:00+00:00"),
+    )
 
 
 def test_retrying_provider_stops_after_max_attempts() -> None:
     source_provider = AlwaysFailingProvider()
     delays: list[float] = []
+    retry_events: list[RetryEvent] = []
 
     provider = RetryingMarketDataProvider(
         provider=source_provider,
@@ -117,6 +152,8 @@ def test_retrying_provider_stops_after_max_attempts() -> None:
             max_delay_seconds=1,
         ),
         sleep_function=delays.append,
+        on_retry=retry_events.append,
+        now_function=fixed_now,
     )
 
     with pytest.raises(
@@ -127,16 +164,20 @@ def test_retrying_provider_stops_after_max_attempts() -> None:
 
     assert source_provider.attempts == 3
     assert delays == pytest.approx([0.1, 0.2])
+    assert len(retry_events) == 2
 
 
 def test_retrying_provider_does_not_retry_permanent_error() -> None:
     source_provider = PermanentlyFailingProvider()
     delays: list[float] = []
+    retry_events: list[RetryEvent] = []
 
     provider = RetryingMarketDataProvider(
         provider=source_provider,
         policy=RetryPolicy(),
         sleep_function=delays.append,
+        on_retry=retry_events.append,
+        now_function=fixed_now,
     )
 
     with pytest.raises(
@@ -147,6 +188,7 @@ def test_retrying_provider_does_not_retry_permanent_error() -> None:
 
     assert source_provider.attempts == 1
     assert delays == []
+    assert retry_events == []
 
 
 def test_retry_policy_limits_exponential_delay() -> None:

@@ -1,10 +1,28 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import sleep
 
 from market_data.exceptions import MarketDataTransientError
-from market_data.models import PriceHistory, PriceHistoryRequest
+from market_data.models import (
+    PriceHistory,
+    PriceHistoryRequest,
+    Ticker,
+)
 from market_data.providers.base import MarketDataProvider
+
+
+@dataclass(frozen=True, slots=True)
+class RetryEvent:
+    ticker: Ticker
+    failed_attempt_number: int
+    next_attempt_number: int
+    delay_seconds: float
+    message: str
+    occurred_at: str
+
+
+RetryCallback = Callable[[RetryEvent], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +70,14 @@ class RetryingMarketDataProvider:
         provider: MarketDataProvider,
         policy: RetryPolicy,
         sleep_function: Callable[[float], None] = sleep,
+        on_retry: RetryCallback | None = None,
+        now_function: Callable[[], datetime] | None = None,
     ) -> None:
         self._provider = provider
         self._policy = policy
         self._sleep = sleep_function
+        self._on_retry = on_retry
+        self._now = now_function if now_function is not None else lambda: datetime.now(UTC)
 
     def fetch_history(
         self,
@@ -69,11 +91,24 @@ class RetryingMarketDataProvider:
         ):
             try:
                 return self._provider.fetch_history(request)
-            except MarketDataTransientError:
+
+            except MarketDataTransientError as error:
                 if attempt_number >= self._policy.max_attempts:
                     raise
 
                 delay_seconds = self._policy.get_delay_after_failure(attempt_number)
+
+                retry_event = RetryEvent(
+                    ticker=request.ticker,
+                    failed_attempt_number=(attempt_number),
+                    next_attempt_number=(attempt_number + 1),
+                    delay_seconds=delay_seconds,
+                    message=str(error),
+                    occurred_at=(self._now().isoformat()),
+                )
+
+                if self._on_retry is not None:
+                    self._on_retry(retry_event)
 
                 self._sleep(delay_seconds)
 
